@@ -4,6 +4,22 @@ import shlex
 import signal
 import subprocess
 import time
+import win32api
+import win32con
+import win32process
+import win32event
+import ctypes
+from ctypes import wintypes
+
+ntdll = ctypes.WinDLL("ntdll")
+
+NtSuspendProcess = ntdll.NtSuspendProcess
+NtSuspendProcess.restype = wintypes.ULONG
+NtSuspendProcess.argtypes = [wintypes.HANDLE]
+
+NtResumeProcess = ntdll.NtResumeProcess
+NtResumeProcess.restype = wintypes.ULONG
+NtResumeProcess.argtypes = [wintypes.HANDLE]
 
 class Shell:
     def __init__(self):
@@ -30,7 +46,8 @@ class Shell:
             'jobs':self.cmd_jobs, # list all background jobs
             'fg':self.cmd_fg, # bring a background job to the foreground
             'bg':self.cmd_bg, # resume stopped job in the background,
-            'run':self.cmd_run # Run a python program
+            'run':self.cmd_run, # Run a python program
+            'pause':self.cmd_pause
         }
 
     def run(self):
@@ -81,6 +98,7 @@ class Shell:
                 'id': self.next_job_id,
                 'proc': proc,
                 'cmd': self.current_cmd,
+                'status': 'Running'
             })
             print(f"[{self.next_job_id}] {proc.pid}")
             self.next_job_id += 1
@@ -228,23 +246,43 @@ class Shell:
     ## kill an existing job
     def cmd_kill(self, args):
         try:
-            pid = int(args[0])
-            os.kill(pid, signal.SIGTERM)
-            print(f"Process {pid} terminated.")
-        except ProcessLookupError:
-            print(f"No process found with PID {pid}.")
-        except ValueError:
-            print("Invalid PID.")
-        except PermissionError:
-            print(f"Permission denied to terminate process {pid}.")
-        except OSError as e:
-            print(f"Error killing process {pid}: {e}")
+            jid = int(args[0])
+        except (IndexError, ValueError):
+            print("kill: missing or invalid job ID")
+            return
+
+        for job in self.jobs:
+            if job['id'] == jid:
+                proc = job['proc']
+                if proc.poll() is not None:
+                    print(f"kill: job {jid} is already terminated")
+                    return
+                try:
+                    # Try POSIX-style termination
+                    try:
+                        os.kill(proc.pid, signal.SIGTERM)
+                    except Exception:
+                        # Fallback for Windows
+                        handle = win32api.OpenProcess(win32con.PROCESS_TERMINATE, False, proc.pid)
+                        win32api.TerminateProcess(handle, -1)
+                        win32api.CloseHandle(handle)
+
+                    job['status'] = 'Killed'
+                    print(f"Job [{jid}] (PID {proc.pid}) terminated.")
+                    return
+                except Exception as e:
+                    print(f"kill: failed to terminate job {jid}: {e}")
+                    return
+
+        print(f"kill: job {jid} not found")
 
     ## List jobs
     def cmd_jobs(self, args):
         for job in self.jobs:
-            status = 'Running' if job['proc'].poll() is None else 'Done'
-            print(f"[{job['id']}] | {status}")
+            proc = job['proc']
+            if proc.poll() is not None:
+                job['status'] = 'Done'
+            print(f"[{job['id']}] | {job['status']} | {job['cmd']}")
 
     ## bring background job to the foreground
     def cmd_fg(self, args):
@@ -264,16 +302,32 @@ class Shell:
 
     ## resume background job
     def cmd_bg(self, args):
-        jid = int(args[0])
+        try:
+            jid = int(args[0])
+        except (IndexError, ValueError):
+            print("bg: missing or invalid job id")
+            return
+
         for job in self.jobs:
             if job['id'] == jid:
-                try:
-                    os.kill(job['proc'].pid, signal.SIGCONT)
-                except Exception:
-                    pass
-                print(f"[{jid}] {job['proc'].pid} resumed in background")
+                proc = job['proc']
+                if proc.poll() is None:
+                    try:
+                        handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, proc.pid)
+                        NtResumeProcess(handle.handle)  # use .handle here too
+                        win32api.CloseHandle(handle)
+                        job['status'] = 'Running' ## Changing the status to running for resumed job
+                        print(f"[{jid}] {proc.pid} resumed in background")
+                    except Exception as e:
+                        print(f"bg: failed to resume job [{jid}]: {e}")
+                else:
+                    print(f"bg: job [{jid}] is not running")
                 return
+
         print(f"bg: job {jid} not found")
+
+
+
 
 
     ## Run a program in the bakcground
@@ -293,11 +347,41 @@ class Shell:
                 'id': self.next_job_id,
                 'proc': proc,
                 'cmd': ' '.join(cmd),
+                'status':'Running'
             })
             print(f"[{self.next_job_id}] {proc.pid}")
             self.next_job_id += 1
         except Exception as e:
             print(f"run: failed to execute {path}: {e}")
+
+
+    ## Pause a process running in the background
+    def cmd_pause(self, args):
+        try:
+            jid = int(args[0])
+        except (IndexError, ValueError):
+            print("pause: missing or invalid job id")
+            return
+
+        for job in self.jobs:
+            if job['id'] == jid:
+                proc = job['proc']
+                if proc.poll() is None:
+                    try:
+                        handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, proc.pid)
+                        NtSuspendProcess(handle.handle)  # use .handle here
+                        win32api.CloseHandle(handle)
+                        job['status'] = 'Paused' ## Setting status as paused
+                        print(f"Job [{jid}] paused")
+                    except Exception as e:
+                        print(f"pause: failed to pause job [{jid}]: {e}")
+                else:
+                    print(f"pause: job [{jid}] is not running")
+                return
+
+        print(f"pause: job {jid} not found")
+
+
         
 
 if __name__ == '__main__':
