@@ -68,12 +68,6 @@ class RoundRobinScheduler:
 
         print("Round-Robin scheduling complete")
 
-        try:
-            la1, la5, la15 = os.getloadavg()
-            print(f"Load averages (1,5,15 min): {la1:.2f}, {la5:.2f}, {la15:.2f}")
-        except (AttributeError, OSError):
-            print("Error printing averages")
-
         for j in self.jobs:
             ta = j['completion_time'] - j['create_time']
             wt = ta - j['run_time']
@@ -110,6 +104,7 @@ class PriorityScheduler:
             
             slice_start = time.time()
             resume_process(proc)
+            slice_end = time.time()
 
             while proc.poll() is None:
                 higher = [j for j in self.jobs
@@ -131,17 +126,16 @@ class PriorityScheduler:
                 else:
                     time.sleep(0.5)
                 
+                if slice_end is None:
+                    slice_end = time.time()
                 job['run_time'] += slice_end - slice_start
 
             print(f"Job {job['id']} completed")
+            if slice_end is None:
+                slice_end = time.time()
             job['completion_time'] = slice_end
 
         print("Priority scheduling complete")
-        try:
-            la1, la5, la15 = os.getloadavg()
-            print(f"Load averages (1,5,15 min): {la1:.2f}, {la5:.2f}, {la15:.2f}")
-        except (AttributeError, OSError):
-            print("Error loagin averages")
 
         for j in self.jobs:
             ta = j['completion_time'] - j['create_time']
