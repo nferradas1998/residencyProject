@@ -124,20 +124,35 @@ class Shell:
         print()
 
     def cmd_rmdir(self, args):
-        # implement here
-        print()
+        for filename in args:
+            try:
+                os.remove(filename)
+            except Exception as e:
+                print(f"rm: {e}")
+
 
     def cmd_rm(self, args):
-        # implement here
-        print()
+     for filename in args:
+            try:
+                os.remove(filename)
+            except Exception as e:
+                print(f"rm: {e}")
 
     def cmd_touch(self, args):
-        # implement here
-        print()
+     for filename in args:
+            try:
+                with open(filename, 'a'):
+                    os.utime(filename, None)
+            except Exception as e:
+                print(f"touch: {e}")
 
     def cmd_kill(self, args):
-        # implement here
-        print()
+       for filename in args:
+            try:
+                with open(filename, 'a'):
+                    os.utime(filename, None)
+            except Exception as e:
+                print(f"touch: {e}")
 
     def cmd_jobs(self, args):
         # implement here
