@@ -6,11 +6,8 @@ import subprocess
 import time
 import win32api
 import win32con
-import win32process
-import win32event
 import ctypes
 from ctypes import wintypes
-import shutil
 
 ntdll = ctypes.WinDLL("ntdll")
 
