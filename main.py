@@ -140,16 +140,37 @@ class Shell:
         print()
 
     def cmd_jobs(self, args):
-        # implement here
-        print()
+         for job in self.jobs:
+            status = 'Job is Running...' if job['proc'].poll() is None else 'Job is Done'
+            print(f"[{job['id']}] {status} {job['cmd']} (PID {job['proc'].pid})")
 
     def cmd_fg(self, args):
-        # implement here
-        print()
+        if not args:
+            print("Usage: fg <job_id>")
+            return
+        jid = int(args[0])
+        for job in self.jobs:
+            if job['id'] == jid:
+                proc = job['proc']
+                os.kill(proc.pid, signal.SIGCONT)
+                proc.wait()
+                self.jobs.remove(job)
+                return
+        print(f"fg: job {jid} not found")
+
 
     def cmd_bg(self, args):
-        # implement here
-        print()
+        if not args:
+            print("Usage: bg <job_id>")
+            return
+        jid = int(args[0])
+        for job in self.jobs:
+            if job['id'] == jid:
+                proc = job['proc']
+                os.kill(proc.pid, signal.SIGCONT)
+                print(f"[{jid}] {proc.pid} resumed in background")
+                return
+        print(f"bg: job {jid} not found")
 
 if __name__ == '__main__':
     Shell().run()
