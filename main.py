@@ -92,20 +92,20 @@ class Shell:
 
     # Built-in handlers
     def cmd_cd(self, args):
-        # implement here
-        print()
+        try:
+            os.chdir(args[0] if args else os.path.expanduser('~'))
+        except Exception as e:
+            print(f"cd: {e}")
 
     def cmd_pwd(self, args):
-        # implement here
-        print()
+        print(os.getcwd())
 
     def cmd_exit(self, args):
-        # implement here
-        print()
+        print("Exiting shell...")
+        sys.exit(0)
 
     def cmd_echo(self, args):
-        # implement here
-        print()
+        print(' '.join(args))
 
     def cmd_clear(self, args):
         # implement here
