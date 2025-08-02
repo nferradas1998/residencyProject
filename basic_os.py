@@ -7,6 +7,8 @@ import win32api
 import win32con
 import ctypes
 from ctypes import wintypes
+from scheduler import RoundRobinScheduler, PriorityScheduler
+import threading
 
 ntdll = ctypes.WinDLL("ntdll")
 
@@ -44,7 +46,10 @@ class Shell:
             'fg':self.cmd_fg, # bring a background job to the foreground
             'bg':self.cmd_bg, # resume stopped job in the background,
             'run':self.cmd_run, # Run a python program
-            'pause':self.cmd_pause
+            'pause':self.cmd_pause,
+            'srr':  self.cmd_srr,
+            'spri': self.cmd_spri,
+            'runp': self.cmd_runp,
         }
 
     def run(self):
@@ -235,7 +240,7 @@ class Shell:
     def cmd_touch(self, args):
         try:
             with open(args[0], 'a'):
-                os.utime(args[0], None)  # update timestamp or create if not exist
+                os.utime(args[0], None) 
             print(f"File '{args[0]}' touched successfully.")
         except OSError as e:
             print(f"Error touching file: {e}")
@@ -255,7 +260,6 @@ class Shell:
                     print(f"kill: job {jid} is already terminated")
                     return
                 try:
-                    # Try POSIX-style termination
                     try:
                         os.kill(proc.pid, signal.SIGTERM)
                     except Exception:
@@ -278,7 +282,6 @@ class Shell:
         if not self.jobs:
             print("No jobs found")
         for job in self.jobs:
-            proc = job['proc']
             print(f"[{job['id']}] | {job['status']} | {job['cmd']}")
 
     ## bring background job to the foreground
@@ -311,7 +314,7 @@ class Shell:
                 if proc.poll() is None:
                     try:
                         handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, proc.pid)
-                        NtResumeProcess(handle.handle)  # use .handle here too
+                        NtResumeProcess(handle.handle)
                         win32api.CloseHandle(handle)
                         job['status'] = 'Running' ## Changing the status to running for resumed job
                         print(f"[{jid}] {proc.pid} resumed in background")
@@ -333,7 +336,6 @@ class Shell:
         if not os.path.exists(path):
             print(f"run: file not found: {path}")
             return
-        # Determine command
         if path.endswith('.py'):
             cmd = [sys.executable, path] + args[1:]
         else:
@@ -351,6 +353,38 @@ class Shell:
         except Exception as e:
             print(f"run: failed to execute {path}: {e}")
 
+    ## Run with assigned priority
+    def cmd_runp(self, args):
+        if len(args) < 2:
+            print("Usage: runp <priority> <path> [args...]")
+            return
+
+        try:
+            prio = int(args[0])
+        except ValueError:
+            print("runp: priority must be an integer")
+            return
+
+        path, *rest = args[1:]
+        cmd = [sys.executable, path] + rest if path.endswith('.py') else [path] + rest
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
+            )
+            self.jobs.append({
+                'id':       self.next_job_id,
+                'proc':     proc,
+                'cmd':      ' '.join(cmd),
+                'status':   'Running',
+                'priority': prio
+            })
+            print(f"[{self.next_job_id}] {proc.pid} (priority {prio})")
+            self.next_job_id += 1
+        except Exception as e:
+            print(f"runp: failed to execute {' '.join(cmd)}: {e}")
+
 
     ## Pause a process running in the background
     def cmd_pause(self, args):
@@ -366,7 +400,7 @@ class Shell:
                 if proc.poll() is None:
                     try:
                         handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, False, proc.pid)
-                        NtSuspendProcess(handle.handle)  # use .handle here
+                        NtSuspendProcess(handle.handle)
                         win32api.CloseHandle(handle)
                         job['status'] = 'Paused' ## Setting status as paused
                         print(f"Job [{jid}] paused")
@@ -378,7 +412,19 @@ class Shell:
 
         print(f"pause: job {jid} not found")
 
+    def cmd_srr(self, args):
+        try:
+            q = float(args[0])
+        except:
+            print("Usage: srr <quantum>")
+            return
+        RoundRobinScheduler(self.jobs, q).run()
 
+    def cmd_spri(self, args):
+        scheduler = PriorityScheduler(self.jobs) ## creating the scheduler, will need to start it in a thread for dynamic scheduling
+        t = threading.Thread(target=scheduler.run, daemon=True) ## Initialize the thread
+        t.start() ## start the thread
+        print("Priority scheduler started in background.")
         
 
 if __name__ == '__main__':
