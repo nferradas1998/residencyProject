@@ -114,45 +114,65 @@ class Shell:
     def cmd_ls(self, args):
         # implement here
         print()
-
     def cmd_cat(self, args):
         # implement here
-        print()
-
+     print()
     def cmd_mkdir(self, args):
-        # implement here
-        print()
+       print()
 
     def cmd_rmdir(self, args):
-        for filename in args:
-            try:
-                os.remove(filename)
-            except Exception as e:
-                print(f"rm: {e}")
-
+        if not args:
+            print("Usage: rmdir [directory]")
+            return
+        try:
+            os.rmdir(args[0])
+            print(f"Directory '{args[0]}' removed successfully.")
+        except FileNotFoundError:
+            print(f"Directory '{args[0]}' not found.")
+        except OSError as e:
+            print(f"Error removing directory: {e}")
 
     def cmd_rm(self, args):
-     for filename in args:
-            try:
-                os.remove(filename)
-            except Exception as e:
-                print(f"rm: {e}")
+        if not args:
+            print("Usage: rm [filename]")
+            return
+        try:
+            os.remove(args[0])
+            print(f"File '{args[0]}' removed successfully.")
+        except FileNotFoundError:
+            print(f"File '{args[0]}' not found.")
+        except IsADirectoryError:
+            print(f"'{args[0]}' is a directory. Use rmdir to remove directories.")
+        except OSError as e:
+            print(f"Error removing file: {e}")
 
     def cmd_touch(self, args):
-     for filename in args:
-            try:
-                with open(filename, 'a'):
-                    os.utime(filename, None)
-            except Exception as e:
-                print(f"touch: {e}")
+        if not args:
+            print("Usage: touch [filename]")
+            return
+        try:
+            with open(args[0], 'a'):
+                os.utime(args[0], None)  # update timestamp or create if not exist
+            print(f"File '{args[0]}' touched successfully.")
+        except OSError as e:
+            print(f"Error touching file: {e}")
 
     def cmd_kill(self, args):
-       for filename in args:
-            try:
-                with open(filename, 'a'):
-                    os.utime(filename, None)
-            except Exception as e:
-                print(f"touch: {e}")
+        if not args:
+            print("Usage: kill [pid]")
+            return
+        try:
+            pid = int(args[0])
+            os.kill(pid, signal.SIGTERM)
+            print(f"Process {pid} terminated.")
+        except ProcessLookupError:
+            print(f"No process found with PID {pid}.")
+        except ValueError:
+            print("Invalid PID.")
+        except PermissionError:
+            print(f"Permission denied to terminate process {pid}.")
+        except OSError as e:
+            print(f"Error killing process {pid}: {e}")
 
     def cmd_jobs(self, args):
         # implement here
