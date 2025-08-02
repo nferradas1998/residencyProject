@@ -10,6 +10,7 @@ import win32process
 import win32event
 import ctypes
 from ctypes import wintypes
+import shutil
 
 ntdll = ctypes.WinDLL("ntdll")
 
@@ -278,10 +279,10 @@ class Shell:
 
     ## List jobs
     def cmd_jobs(self, args):
+        if not self.jobs:
+            print("No jobs found")
         for job in self.jobs:
             proc = job['proc']
-            if proc.poll() is not None:
-                job['status'] = 'Done'
             print(f"[{job['id']}] | {job['status']} | {job['cmd']}")
 
     ## bring background job to the foreground
