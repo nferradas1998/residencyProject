@@ -9,6 +9,7 @@ import ctypes
 from ctypes import wintypes
 from scheduler import RoundRobinScheduler, PriorityScheduler
 import threading
+import time
 
 ntdll = ctypes.WinDLL("ntdll")
 
@@ -342,11 +343,16 @@ class Shell:
             cmd = [path] + args[1:]
         try:
             proc = subprocess.Popen(cmd, preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None)
+            now = time.time()
             self.jobs.append({
                 'id': self.next_job_id,
                 'proc': proc,
                 'cmd': ' '.join(cmd),
-                'status':'Running'
+                'status':'Running',
+                'create_time':    now,
+                'first_scheduled': None,    
+                'run_time':       0.0,       
+                'completion_time': None
             })
             print(f"[{self.next_job_id}] {proc.pid}")
             self.next_job_id += 1
@@ -373,12 +379,17 @@ class Shell:
                 cmd,
                 preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None
             )
+            now = time.time()
             self.jobs.append({
                 'id':       self.next_job_id,
                 'proc':     proc,
                 'cmd':      ' '.join(cmd),
                 'status':   'Running',
-                'priority': prio
+                'priority': prio,
+                'create_time':    now,
+                'first_scheduled': None,    
+                'run_time':       0.0,       
+                'completion_time': None
             })
             print(f"[{self.next_job_id}] {proc.pid} (priority {prio})")
             self.next_job_id += 1

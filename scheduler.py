@@ -48,16 +48,40 @@ class RoundRobinScheduler:
             for job in alive:
                 pid = job['proc'].pid
                 print(f"Resuming job {job['id']} (PID {pid})")
+                if job['first_scheduled'] is None:
+                    job['first_scheduled'] = time.time()
+                    
+                slice_start = time.time()
                 resume_process(job['proc'])
+
                 time.sleep(self.quantum)
+                slice_end = time.time()
+
+                job['run_time'] += slice_end - slice_start
 
                 if job['proc'].poll() is None:
                     print(f"Suspending job {job['id']} after {self.quantum}s") ## Once time passed, suspend the job to resume the next
                     suspend_process(job['proc'])
                 else:
+                    job['completion_time'] = slice_end
                     print(f"Job {job['id']} completed")
 
         print("Round-Robin scheduling complete")
+
+        try:
+            la1, la5, la15 = os.getloadavg()
+            print(f"Load averages (1,5,15 min): {la1:.2f}, {la5:.2f}, {la15:.2f}")
+        except (AttributeError, OSError):
+            print("Error printing averages")
+
+        for j in self.jobs:
+            ta = j['completion_time'] - j['create_time']
+            wt = ta - j['run_time']
+            rt = j['first_scheduled'] - j['create_time']
+            print(f"Job {j['id']} ({j['cmd']}):")
+            print(f"  Turnaround time: {ta:.2f}s")
+            print(f"  Waiting       time: {wt:.2f}s")
+            print(f"  Response      time: {rt:.2f}s")
 
 
 class PriorityScheduler:
@@ -81,6 +105,10 @@ class PriorityScheduler:
                 continue
 
             print(f"Running job {job['id']} (priority={prio})")
+            if job['first_scheduled'] is None:
+                job['first_scheduled'] = time.time()
+            
+            slice_start = time.time()
             resume_process(proc)
 
             while proc.poll() is None:
@@ -90,15 +118,36 @@ class PriorityScheduler:
                 if higher:
                     pre = higher[0] ## if incoming priority is higher, then pause current job
                     print(f"Preempting job {job['id']} for job {pre['id']}")
+                    slice_end = time.time()
                     suspend_process(proc)
                     heapq.heappush(heap, (-prio, job))
                     job = pre
                     prio = job['priority']
                     proc = job['proc']
+                    if job['first_scheduled'] is None:
+                        job['first_scheduled'] = time.time()
+                    slice_start = time.time()
                     resume_process(proc)
                 else:
                     time.sleep(0.5)
+                
+                job['run_time'] += slice_end - slice_start
 
             print(f"Job {job['id']} completed")
+            job['completion_time'] = slice_end
 
         print("Priority scheduling complete")
+        try:
+            la1, la5, la15 = os.getloadavg()
+            print(f"Load averages (1,5,15 min): {la1:.2f}, {la5:.2f}, {la15:.2f}")
+        except (AttributeError, OSError):
+            print("Error loagin averages")
+
+        for j in self.jobs:
+            ta = j['completion_time'] - j['create_time']
+            wt = ta - j['run_time']
+            rt = j['first_scheduled'] - j['create_time']
+            print(f"Job {j['id']} ({j['cmd']}):")
+            print(f"  Turnaround time: {ta:.2f}s")
+            print(f"  Waiting       time: {wt:.2f}s")
+            print(f"  Response      time: {rt:.2f}s")
