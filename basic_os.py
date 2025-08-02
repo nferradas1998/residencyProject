@@ -10,6 +10,9 @@ from ctypes import wintypes
 from scheduler import RoundRobinScheduler, PriorityScheduler
 import threading
 import time
+import process_sync
+from memory_manager import MemoryManager, PageFault
+from queue import Queue
 
 ntdll = ctypes.WinDLL("ntdll")
 
@@ -23,10 +26,13 @@ NtResumeProcess.argtypes = [wintypes.HANDLE]
 
 class Shell:
     def __init__(self):
+        self.job_queue = Queue()           # unbounded; or Queue(maxsize=N) to limit # of jobs
+        self.jobs_lock  = threading.Lock()
         self.jobs = [] # initialiing job array to help with process management
         self.next_job_id = 1 # initializing first job id as 1 for first job    
         self.current_process = None # initializing current variable as null to track current process
         self.current_cmd = None # initializing current command variable as null to track current command
+        self.mm = MemoryManager(total_frames=10, algorithm='LRU') 
 
         # Define lists of commands that are supported by the OS
         self.builtins = {
@@ -51,6 +57,10 @@ class Shell:
             'srr':  self.cmd_srr,
             'spri': self.cmd_spri,
             'runp': self.cmd_runp,
+            'meminit': self.cmd_meminit,
+            'memadd':  self.cmd_memadd,
+            'memreq':  self.cmd_memreq,
+            'memstats': self.cmd_memstats,
         }
 
     def run(self):
@@ -328,9 +338,6 @@ class Shell:
         print(f"bg: job {jid} not found")
 
 
-
-
-
     ## Run a program in the bakcground
     def cmd_run(self, args):
         path = args[0]
@@ -391,8 +398,14 @@ class Shell:
                 'run_time':       0.0,       
                 'completion_time': None
             })
-            print(f"[{self.next_job_id}] {proc.pid} (priority {prio})")
-            self.next_job_id += 1
+            with self.jobs_lock:
+                self.jobs.append(self.jobs)
+                self.next_job_id += 1
+
+            # hand off into the scheduler’s queue
+            self.job_queue.put(self.jobs)
+
+            print(f"[{self.jobs['id']}] {proc.pid} (priority {prio}) queued")
         except Exception as e:
             print(f"runp: failed to execute {' '.join(cmd)}: {e}")
 
@@ -436,7 +449,99 @@ class Shell:
         t = threading.Thread(target=scheduler.run, daemon=True) ## Initialize the thread
         t.start() ## start the thread
         print("Priority scheduler started in background.")
-        
+
+    def cmd_meminit(self, args):
+       # Usage: meminit <frames> <FIFO|LRU>
+       if len(args)>=1:
+           frames = int(args[0])
+           algo = args[1] if len(args)>1 else 'FIFO'
+           self.mm = MemoryManager(frames, algo)
+           print(f"Memory manager initialized: {frames} frames, {algo}")
+       else:
+           print("Usage: meminit <frames> [FIFO|LRU]")
+
+    def cmd_memadd(self, args):
+       # Usage: memadd <pid>
+        pid = int(args[0])
+        with self.mm_lock:
+            self.mm.add_process(pid)
+        print(f"PID {pid} added")
+
+    def cmd_memreq(self, args):
+       # Usage: memreq <pid> <page>
+       try:
+           pid, page = map(int, args)
+           hit = self.mm.access_page(pid, page)
+           print(f"PID {pid} page {page} hit (in frame {self.mm.page_table[pid][page]})")
+       except PageFault as pf:
+           print(pf)
+       except Exception as e:
+           print(f"memreq error: {e}")
+
+    def cmd_memstats(self, args):
+       print(self.mm.stats())
+
+    def cmd_pc_demo(self, args):
+       buf = int(args[0]) if args else 5
+       items = int(args[1]) if len(args)>1 else 20
+       process_sync.producer_consumer(buf, items)
+
+    def cmd_dp_demo(self, args):
+       n = int(args[0]) if args else 5
+       process_sync.dining_philosophers(n)
+
+    def start_priority_service(self):
+        """Start one background thread that will continuously consume jobs."""
+        t = threading.Thread(target=self._priority_loop, daemon=True)
+        t.start()
+
+    def _priority_loop(self):
+        from schedulers import suspend_process, resume_process  # or adjust imports
+        import time, heapq
+
+        active = []
+        while True:
+            # 1) If no active jobs, block waiting for at least one
+            if not active:
+                job = self.job_queue.get()
+                active.append(job)
+                self.job_queue.task_done()
+
+            # 2) Build a heap of all currently alive jobs by priority
+            active = [j for j in active if j['proc'].poll() is None]
+            for _ in range(self.job_queue.qsize()):
+                j = self.job_queue.get_nowait()
+                active.append(j)
+                self.job_queue.task_done()
+
+            heap = [(-j['priority'], j) for j in active]
+            heapq.heapify(heap)
+
+            # 3) Pick highest‐priority job
+            _, job = heapq.heappop(heap)
+            active = [j for _, j in heap]  # remaining
+            proc = job['proc']
+
+            # 4) Run it until it finishes or a higher-priority job arrives
+            resume_process(proc)
+            while proc.poll() is None:
+                try:
+                    # non-blocking check for a new job
+                    new = self.job_queue.get_nowait()
+                    active.append(new)
+                    self.job_queue.task_done()
+                    # if new job outranks current, preempt
+                    if new['priority'] > job['priority']:
+                        suspend_process(proc)
+                        active.append(job)
+                        job = new
+                        proc = job['proc']
+                        resume_process(proc)
+                except:
+                    pass
+                time.sleep(0.1)
+
+            # it finished—loop around to pick the next one
 
 if __name__ == '__main__':
     Shell().run()
