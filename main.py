@@ -109,16 +109,44 @@ class Shell:
 
     def cmd_clear(self, args):
         # implement here
-        print()
+        if sys.platform.startswith('win'):
+            os.system('cls')
+        else:
+            os.system('clear')
+        print(f"Terminal cleared")
 
     def cmd_ls(self, args):
         # implement here
-        print()
+        curr_dir = "."
+        files = []
+        entries = os.listdir(curr_dir)
+        for entry in entries:
+            full_path = os.path.join(curr_dir, entry)
+            if os.path.isfile(full_path):
+                files.append(entry)
+
+        for filename in files:
+            print(filename)
+
     def cmd_cat(self, args):
         # implement here
-     print()
+        try:
+            with open(args[0], 'r') as f:
+                content = f.read()
+                print(content)
+        except FileNotFoundError:
+            print(f"File Not Found")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
     def cmd_mkdir(self, args):
-       print()
+        try:
+            os.mkdir(args[0])
+            print(f"Directory '{args[0]}' created successfully.")
+        except FileExistsError:
+            print(f"Directory '{args[0]}' already exists.")
+        except OSError as e:
+            print(f"Error creating directory: {e}")
 
     def cmd_rmdir(self, args):
         if not args:
