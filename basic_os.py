@@ -3,7 +3,6 @@ import sys
 import shlex
 import signal
 import subprocess
-import time
 import win32api
 import win32con
 import ctypes
